@@ -5,9 +5,9 @@ namespace App\Filament\Resources\CamperRegistrations;
 use App\Filament\Resources\CamperRegistrations\Pages\CreateCamperRegistration;
 use App\Filament\Resources\CamperRegistrations\Pages\EditCamperRegistration;
 use App\Filament\Resources\CamperRegistrations\Pages\ListCamperRegistrations;
+use App\Filament\Resources\CamperRegistrations\RelationManagers\DocumentsRelationManager;
 use App\Filament\Resources\CamperRegistrations\Schemas\CamperRegistrationForm;
 use App\Filament\Resources\CamperRegistrations\Tables\CamperRegistrationsTable;
-use App\Filament\Resources\CamperRegistrationResource\RelationManagers\DocumentsRelationManager;
 use App\Models\CamperRegistration;
 use BackedEnum;
 use Filament\Resources\Resource;
@@ -15,7 +15,6 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use UnitEnum;
-
 
 class CamperRegistrationResource extends Resource
 {
