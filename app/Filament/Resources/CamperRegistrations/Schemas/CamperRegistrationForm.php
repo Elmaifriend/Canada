@@ -18,10 +18,10 @@ use Filament\Forms\Set;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
-use Filament\Schemas\Schema;
-use Filament\Support\Icons\Heroicon;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
+use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 
 class CamperRegistrationForm
 {
@@ -174,60 +174,28 @@ class CamperRegistrationForm
                                                     ->required()
                                                     ->columnSpanFull(),
 
-                                                Grid::make(['default' => 1, 'sm' => 2])
-                                                    ->schema([
-                                                        QrCodeCard::make('public_link_qr')
-                                                            ->label('Registration Portal QR Code')
-                                                            ->url(fn (?CamperRegistration $record): ?string => $record?->token ? url("/public/camper-register?token={$record->token}") : null)
-                                                            ->caption('Scan to access registration')
-                                                            ->qrSize(200)
-                                                            ->columnSpan(1),
-
-                                                        QrCodeCard::make('public_medical_qr')
-                                                            ->label('Medical Consent QR Code')
-                                                            ->url(fn (?CamperRegistration $record): ?string => $record?->token ? url("/public/medical/{$record->token}") : null)
-                                                            ->caption('Scan to update medical consent')
-                                                            ->qrSize(200)
-                                                            ->columnSpan(1),
-                                                    ])
+                                                QrCodeCard::make('public_link_qr')
+                                                    ->label('Registration Portal QR Code')
+                                                    ->url(fn (?CamperRegistration $record): ?string => $record?->token ? url("/public/camper-register?token={$record->token}") : null)
+                                                    ->caption('Scan to access registration')
+                                                    ->qrSize(200)
                                                     ->columnSpanFull(),
 
-                                                Grid::make(['default' => 1, 'sm' => 2])
-                                                    ->schema([
-                                                        TextInput::make('public_link')
-                                                            ->label('Public Access Link')
-                                                            ->prefixIcon(Heroicon::OutlinedLink)
-                                                            ->formatStateUsing(fn (?CamperRegistration $record): ?string => $record?->token ? url("/public/camper-register?token={$record->token}") : null)
-                                                            ->placeholder('Generated after saving')
-                                                            ->disabled()
-                                                            ->dehydrated(false)
-                                                            ->copyable()
-                                                            ->suffixAction(
-                                                                Action::make('openPublicLink')
-                                                                    ->icon('heroicon-m-arrow-top-right-on-square')
-                                                                    ->tooltip('Open public portal link in new tab')
-                                                                    ->url(fn (?string $state): ?string => $state, shouldOpenInNewTab: true)
-                                                                    ->visible(fn (?string $state): bool => ! empty($state))
-                                                            )
-                                                            ->columnSpan(1),
-
-                                                        TextInput::make('public_medical_link')
-                                                            ->label('Public Medical & Consent Link')
-                                                            ->prefixIcon(Heroicon::OutlinedHeart)
-                                                            ->formatStateUsing(fn (?CamperRegistration $record): ?string => $record?->token ? url("/public/medical/{$record->token}") : null)
-                                                            ->placeholder('Generated after saving')
-                                                            ->disabled()
-                                                            ->dehydrated(false)
-                                                            ->copyable()
-                                                            ->suffixAction(
-                                                                Action::make('openMedicalLink')
-                                                                    ->icon('heroicon-m-arrow-top-right-on-square')
-                                                                    ->tooltip('Open public medical consent form in new tab')
-                                                                    ->url(fn (?string $state): ?string => $state, shouldOpenInNewTab: true)
-                                                                    ->visible(fn (?string $state): bool => ! empty($state))
-                                                            )
-                                                            ->columnSpan(1),
-                                                    ])
+                                                TextInput::make('public_link')
+                                                    ->label('Public Access Link')
+                                                    ->prefixIcon(Heroicon::OutlinedLink)
+                                                    ->formatStateUsing(fn (?CamperRegistration $record): ?string => $record?->token ? url("/public/camper-register?token={$record->token}") : null)
+                                                    ->placeholder('Generated after saving')
+                                                    ->disabled()
+                                                    ->dehydrated(false)
+                                                    ->copyable()
+                                                    ->suffixAction(
+                                                        Action::make('openPublicLink')
+                                                            ->icon('heroicon-m-arrow-top-right-on-square')
+                                                            ->tooltip('Open public portal link in new tab')
+                                                            ->url(fn (?string $state): ?string => $state, shouldOpenInNewTab: true)
+                                                            ->visible(fn (?string $state): bool => ! empty($state))
+                                                    )
                                                     ->columnSpanFull(),
                                             ])
                                             ->columnSpan(1),

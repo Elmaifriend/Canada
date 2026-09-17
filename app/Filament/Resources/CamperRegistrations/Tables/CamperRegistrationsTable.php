@@ -74,12 +74,6 @@ class CamperRegistrationsTable
                         ->color('info')
                         ->url(fn (CamperRegistration $record): ?string => $record->token ? url("/public/camper-register?token={$record->token}") : null, shouldOpenInNewTab: true)
                         ->visible(fn (CamperRegistration $record): bool => ! empty($record->token)),
-                    Action::make('openMedicalPortal')
-                        ->label('Open Medical & Consent Form')
-                        ->icon('heroicon-m-heart')
-                        ->color('warning')
-                        ->url(fn (CamperRegistration $record): ?string => $record->token ? url("/public/medical/{$record->token}") : null, shouldOpenInNewTab: true)
-                        ->visible(fn (CamperRegistration $record): bool => ! empty($record->token)),
                     DeleteAction::make(),
                 ]),
             ])

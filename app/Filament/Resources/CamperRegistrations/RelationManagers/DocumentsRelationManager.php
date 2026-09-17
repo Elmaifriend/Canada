@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Filament\Resources\CamperRegistrationResource\RelationManagers;
+namespace App\Filament\Resources\CamperRegistrations\RelationManagers;
 
 use App\Enums\DocumentFileType;
 use Filament\Actions\BulkActionGroup;

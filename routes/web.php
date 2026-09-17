@@ -1,11 +1,10 @@
 <?php
 
-use App\Livewire\Public\CamperRegistrationForm;
-use App\Livewire\Public\GroupEventRegistrationForm;
-use App\Livewire\Public\MedicalConsentUpdateForm;
-use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\GroupApprovedController;
 use App\Http\Controllers\IndividualRegistrationController;
+use App\Livewire\Public\CamperRegistrationForm;
+use App\Livewire\Public\GroupEventRegistrationForm;
+use Illuminate\Support\Facades\Route;
 
 Route::get('/', CamperRegistrationForm::class)->name('home');
 
@@ -13,7 +12,6 @@ Route::get('/', CamperRegistrationForm::class)->name('home');
 Route::prefix('public')->group(function () {
     Route::get('/camper-register', CamperRegistrationForm::class)->name('public.camper.register');
     Route::get('/group-request', GroupEventRegistrationForm::class)->name('public.group.register');
-    Route::get('/medical/{token}', MedicalConsentUpdateForm::class)->name('public.medical.update');
 });
 
 Route::middleware(['auth', 'verified'])->group(function () {
