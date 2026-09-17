@@ -22,6 +22,7 @@ use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Support\Facades\URL;
 
 class CamperRegistrationForm
 {
@@ -184,7 +185,28 @@ class CamperRegistrationForm
                                                 TextInput::make('public_link')
                                                     ->label('Public Access Link')
                                                     ->prefixIcon(Heroicon::OutlinedLink)
-                                                    ->formatStateUsing(fn (?CamperRegistration $record): ?string => $record?->token ? url("/public/camper-register?token={$record->token}") : null)
+                                                    ->formatStateUsing(function (?CamperRegistration $record): ?string {
+                                                        if (! $record) {
+                                                            return null;
+                                                        }
+
+                                                        // Obtener la sesión asociada (soporta relación BelongsTo o BelongsToMany/Pivote)
+                                                        $session = $record->registrationSession 
+                                                            ?? $record->registrationSessions()->first();
+
+                                                        $sessionToken = $session?->token;
+
+                                                        if (! $sessionToken) {
+                                                            return null;
+                                                        }
+
+                                                        // Genera la URL firmada válida por 15 días
+                                                        return URL::temporarySignedRoute(
+                                                            'public.camper.edit',
+                                                            now()->addDays(15),
+                                                            ['token' => $sessionToken]
+                                                        );
+                                                    })
                                                     ->placeholder('Generated after saving')
                                                     ->disabled()
                                                     ->dehydrated(false)

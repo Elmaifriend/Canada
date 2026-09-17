@@ -41,7 +41,6 @@ class Camper extends Model
         return $this->hasMany(CamperRegistration::class);
     }
 
-    // Obtener todos los eventos en los que el acampante ha participado a través de sus inscripciones
     public function campEvents(): HasManyThrough
     {
         return $this->hasManyThrough(CampEvent::class, CamperRegistration::class, 'camper_id', 'id', 'id', 'camp_event_id');

@@ -30,6 +30,7 @@ class Guardian extends Model
     public function registrationSessions(): BelongsToMany
     {
         return $this->belongsToMany(RegistrationSession::class, 'guardian_registration_session')
+            ->withPivot(['relationship_type', 'is_primary_guardian', 'is_emergency_contact'])
             ->withTimestamps();
     }
 

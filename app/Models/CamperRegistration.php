@@ -6,6 +6,7 @@ use App\Enums\RegistrationStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Str;
@@ -47,9 +48,17 @@ class CamperRegistration extends Model
         return $this->belongsTo(CampEvent::class);
     }
 
-    public function registrationSession(): BelongsTo
+    /**
+     * Sesiones de formulario donde fue incluida esta inscripción
+     */
+    public function registrationSessions(): BelongsToMany
     {
-        return $this->belongsTo(RegistrationSession::class);
+        return $this->belongsToMany(
+            RegistrationSession::class,
+            'camper_registration_session',
+            'camper_registration_id',
+            'registration_session_id'
+        )->withTimestamps();
     }
 
     public function consent(): HasOne

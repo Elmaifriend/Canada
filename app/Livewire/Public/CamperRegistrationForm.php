@@ -8,119 +8,133 @@ use App\Models\CamperConsent;
 use App\Models\CamperMedical;
 use App\Models\CamperRegistration;
 use App\Models\Guardian;
+use App\Models\RegistrationSession;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 
 class CamperRegistrationForm extends Component
 {
-    #[Url]
+    // Remueve el atributo #[Url] para evitar sincronización con la Query String (?token=)
     public ?string $token = null;
 
     public bool $isEditing = false;
-
-    public ?int $registration_id = null;
-
+    public ?int $registration_session_id = null;
     public ?CampEvent $activeEvent = null;
 
-    // Dynamic Guardians Array
     public array $guardians = [];
-
-    // Dynamic Campers Array
     public array $campers = [];
 
-    public bool $submitted = false;
-
-    public array $registered_tokens = [];
-
+    // Recibe $token directamente del parámetro de la ruta URI: /camper-register/edit/{token}
     public function mount(?string $token = null): void
     {
-        $targetToken = $token ?? $this->token ?? request()->query('token');
+        // Únicamente tomamos el parámetro que viene en la definición de la ruta
+        $targetToken = $token;
 
         if (! empty($targetToken)) {
-            $registration = CamperRegistration::with(['camper.medical', 'camper.guardians', 'consent', 'campEvent'])
-                ->where('token', $targetToken)
-                ->first();
+            // Cargar la sesión con sus relaciones pivote
+            $session = RegistrationSession::with([
+                'campEvent',
+                'guardians',
+                'camperRegistrations.camper.medical',
+                'camperRegistrations.consent',
+            ])
+            ->where('token', $targetToken)
+            ->first();
 
-            if ($registration) {
+            if ($session) {
                 $this->token = $targetToken;
                 $this->isEditing = true;
-                $this->registration_id = $registration->id;
-                $this->activeEvent = $registration->campEvent ?? CampEvent::where('is_active', true)->latest()->first();
+                $this->registration_session_id = $session->id;
+                $this->activeEvent = $session->campEvent ?? CampEvent::where('is_active', true)->latest()->first();
 
-                // Pre-fill guardians
-                $guardians = $registration->camper?->guardians;
-                if ($guardians && $guardians->count() > 0) {
-                    foreach ($guardians as $index => $g) {
-                        $pivot = $g->pivot;
-                        $this->guardians[] = [
-                            'first_name' => $g->first_name,
-                            'last_name' => $g->last_name,
-                            'phone' => $g->phone ?? '',
-                            'email' => $g->email,
-                            'address' => $g->address,
-                            'relationship_type' => $pivot?->relationship_type ?? 'father',
-                            'is_primary_guardian' => (bool) ($pivot?->is_primary_guardian ?? ($index === 0)),
-                            'is_emergency_contact' => (bool) ($pivot?->is_emergency_contact ?? true),
-                            'has_custody' => (bool) $g->has_custody,
-                        ];
-                    }
-                } else {
-                    $this->addGuardian();
-                }
-
-                // Pre-fill camper
-                $camper = $registration->camper;
-                $medical = $camper?->medical;
-                $consent = $registration->consent;
-
-                $dobString = '';
-                if ($camper?->date_of_birth) {
-                    $dobString = is_string($camper->date_of_birth)
-                        ? $camper->date_of_birth
-                        : $camper->date_of_birth->format('Y-m-d');
-                }
-
-                $genderVal = 'male';
-                if ($camper?->gender) {
-                    $genderVal = is_object($camper->gender) ? $camper->gender->value : (string) $camper->gender;
-                }
-
-                $this->campers[] = [
-                    'first_name' => $camper->first_name ?? '',
-                    'last_name' => $camper->last_name ?? '',
-                    'gender' => $genderVal,
-                    'date_of_birth' => $dobString,
-                    'health_card_number' => $camper->health_card_number ?? '',
-                    'address' => $camper->address ?? '',
-                    'custody_details' => $camper->custody_details ?? '',
-                    'allergies' => $medical->allergies ?? '',
-                    'medications' => $medical->medications ?? '',
-                    'dietary_restrictions' => $medical->dietary_restrictions ?? '',
-                    'critical_alerts' => $medical->critical_alerts ?? '',
-                    'photo_permission' => (bool) ($consent->photo_permission ?? false),
-                    'travel_permission' => (bool) ($consent->travel_permission ?? false),
-                    'contact_permission' => (bool) ($consent->contact_permission ?? false),
-                    'medical_permission' => (bool) ($consent->medical_permission ?? false),
-                ];
+                $this->loadRegistrationSessionData($session);
 
                 return;
             }
 
-            session()->flash('warning', 'Invalid or expired access link. You may complete a new registration below.');
+            session()->flash('warning', 'Enlace de acceso no válido o expirado. Puedes completar un nuevo registro.');
         }
 
-        // Default new registration setup
+        // Configuración por defecto para nuevo registro
         $this->activeEvent = CampEvent::where('is_active', true)->latest()->first();
         $this->addGuardian();
         $this->addCamper();
     }
 
-    // ─── Guardian Methods ───────────────────────────────────────────────────────
+    // ─── Carga y Reconstrucción de Datos ───────────────────────────────────────
+
+    private function loadRegistrationSessionData(RegistrationSession $session): void
+    {
+        // 1. Reconstruir Guardias desde la pivote guardian_registration_session
+        foreach ($session->guardians as $index => $g) {
+            $pivot = $g->pivot;
+            $this->guardians[] = [
+                'id' => $g->id,
+                'first_name' => $g->first_name,
+                'last_name' => $g->last_name,
+                'phone' => $g->phone ?? '',
+                'email' => $g->email,
+                'address' => $g->address,
+                'relationship_type' => $pivot?->relationship_type ?? 'father',
+                'is_primary_guardian' => (bool) ($pivot?->is_primary_guardian ?? ($index === 0)),
+                'is_emergency_contact' => (bool) ($pivot?->is_emergency_contact ?? true),
+                'has_custody' => (bool) $g->has_custody,
+            ];
+        }
+
+        if (empty($this->guardians)) {
+            $this->addGuardian();
+        }
+
+        // 2. Reconstruir Acampantes desde camperRegistrations de la Sesión
+        foreach ($session->camperRegistrations as $registration) {
+            $camper = $registration->camper;
+            if (! $camper) continue;
+
+            $medical = $camper->medical;
+            $consent = $registration->consent;
+
+            $dobString = $camper->date_of_birth
+                ? (is_string($camper->date_of_birth) ? $camper->date_of_birth : $camper->date_of_birth->format('Y-m-d'))
+                : '';
+
+            $genderVal = $camper->gender
+                ? (is_object($camper->gender) ? $camper->gender->value : (string) $camper->gender)
+                : 'male';
+
+            $this->campers[] = [
+                'camper_id' => $camper->id,
+                'registration_id' => $registration->id,
+                'first_name' => $camper->first_name ?? '',
+                'last_name' => $camper->last_name ?? '',
+                'gender' => $genderVal,
+                'date_of_birth' => $dobString,
+                'health_card_number' => $camper->health_card_number ?? '',
+                'address' => $camper->address ?? '',
+                'custody_details' => $camper->custody_details ?? '',
+                'allergies' => $medical?->allergies ?? '',
+                'medications' => $medical?->medications ?? '',
+                'dietary_restrictions' => $medical?->dietary_restrictions ?? '',
+                'critical_alerts' => $medical?->critical_alerts ?? '',
+                'photo_permission' => (bool) ($consent?->photo_permission ?? false),
+                'travel_permission' => (bool) ($consent?->travel_permission ?? false),
+                'contact_permission' => (bool) ($consent?->contact_permission ?? false),
+                'medical_permission' => (bool) ($consent?->medical_permission ?? false),
+            ];
+        }
+
+        if (empty($this->campers)) {
+            $this->addCamper();
+        }
+    }
+
+    // ─── Gestión de Guardias Dinámicos ────────────────────────────────────────
 
     public function addGuardian(): void
     {
         $this->guardians[] = [
+            'id' => null,
             'first_name' => '',
             'last_name' => '',
             'phone' => '',
@@ -146,11 +160,13 @@ class CamperRegistrationForm extends Component
         }
     }
 
-    // ─── Camper Methods ─────────────────────────────────────────────────────────
+    // ─── Gestión de Acampantes Dinámicos ──────────────────────────────────────
 
     public function addCamper(): void
     {
         $this->campers[] = [
+            'camper_id' => null,
+            'registration_id' => null,
             'first_name' => '',
             'last_name' => '',
             'gender' => 'male',
@@ -177,122 +193,121 @@ class CamperRegistrationForm extends Component
         }
     }
 
-    // ─── Submit ─────────────────────────────────────────────────────────────────
+    // ─── Guardado / Actualización ──────────────────────────────────────────────
 
-    public function submit(): void
+    public function submit()
     {
         if (! $this->activeEvent) {
-            session()->flash('error', 'No active camp event is currently configured.');
-
+            session()->flash('error', 'No hay ningún evento activo configurado.');
             return;
         }
 
-        $tokens = [];
+        $sessionToken = null;
 
-        DB::transaction(function () use (&$tokens) {
+        DB::transaction(function () use (&$sessionToken) {
 
-            // 1. Process Guardians
-            $guardianModels = [];
+            // 1. Crear o recuperar la Sesión Contenedora
+            if ($this->isEditing && $this->registration_session_id) {
+                $session = RegistrationSession::findOrFail($this->registration_session_id);
+            } else {
+                $session = RegistrationSession::create([
+                    'camp_event_id' => $this->activeEvent->id,
+                    'status' => 'pending',
+                ]);
+            }
+
+            $sessionToken = $session->token;
+
+            // 2. Procesar Tutores / Guardias
+            $guardianSyncData = [];
             foreach ($this->guardians as $gData) {
-                if (! empty($gData['email'])) {
-                    $guardian = Guardian::firstOrCreate(
+                $guardianData = [
+                    'first_name' => trim($gData['first_name']),
+                    'last_name' => trim($gData['last_name']),
+                    'phone' => trim($gData['phone']),
+                    'address' => $gData['address'] ?? null,
+                    'has_custody' => (bool) ($gData['has_custody'] ?? false),
+                ];
+
+                if (! empty($gData['id'])) {
+                    $guardian = Guardian::findOrFail($gData['id']);
+                    $guardian->update(array_merge($guardianData, ['email' => $gData['email'] ?? null]));
+                } elseif (! empty($gData['email'])) {
+                    $guardian = Guardian::updateOrCreate(
                         ['email' => trim($gData['email'])],
-                        [
-                            'first_name' => trim($gData['first_name']),
-                            'last_name' => trim($gData['last_name']),
-                            'phone' => trim($gData['phone']),
-                            'address' => $gData['address'] ?? null,
-                            'has_custody' => (bool) ($gData['has_custody'] ?? false),
-                        ]
+                        $guardianData
                     );
-                    $guardian->update([
-                        'first_name' => trim($gData['first_name']),
-                        'last_name' => trim($gData['last_name']),
-                        'has_custody' => (bool) ($gData['has_custody'] ?? false),
-                        'phone' => trim($gData['phone']),
-                        'address' => $gData['address'] ?? null,
-                    ]);
                 } else {
-                    $guardian = Guardian::create([
-                        'first_name' => trim($gData['first_name']),
-                        'last_name' => trim($gData['last_name']),
-                        'phone' => trim($gData['phone']),
-                        'email' => null,
-                        'address' => $gData['address'] ?? null,
-                        'has_custody' => (bool) ($gData['has_custody'] ?? false),
-                    ]);
+                    $guardian = Guardian::create(array_merge($guardianData, ['email' => null]));
                 }
 
-                $guardianModels[] = [
-                    'model' => $guardian,
-                    'relationship_type' => $gData['relationship_type'],
+                $guardianSyncData[$guardian->id] = [
+                    'relationship_type' => $gData['relationship_type'] ?? 'father',
                     'is_primary_guardian' => (bool) ($gData['is_primary_guardian'] ?? false),
-                    'is_emergency_contact' => (bool) ($gData['is_emergency_contact'] ?? false),
+                    'is_emergency_contact' => (bool) ($gData['is_emergency_contact'] ?? true),
                 ];
             }
 
-            // 2. Process Campers
+            // Sincronizar tutores con la sesión
+            $session->guardians()->sync($guardianSyncData);
+
+            // 3. Procesar Acampantes e Inscripciones Individuales
+            $registrationIds = [];
+
             foreach ($this->campers as $item) {
                 $dob = ! empty($item['date_of_birth'])
                     ? \Carbon\Carbon::parse($item['date_of_birth'])->toDateString()
                     : null;
 
-                if ($this->isEditing && $this->registration_id) {
-                    $registration = CamperRegistration::find($this->registration_id);
-                    $camper = $registration?->camper;
-
-                    if ($camper) {
-                        $camper->update([
-                            'first_name' => trim($item['first_name']),
-                            'last_name' => trim($item['last_name']),
-                            'date_of_birth' => $dob,
-                            'gender' => $item['gender'] ?? 'male',
-                            'address' => $item['address'] ?? null,
-                            'custody_details' => $item['custody_details'] ?? null,
-                            'health_card_number' => $item['health_card_number'] ?? null,
-                        ]);
-                    }
+                // A) Guardar/Actualizar Camper
+                if (! empty($item['camper_id'])) {
+                    $camper = Camper::findOrFail($item['camper_id']);
+                    $camper->update([
+                        'first_name' => trim($item['first_name']),
+                        'last_name' => trim($item['last_name']),
+                        'date_of_birth' => $dob,
+                        'gender' => $item['gender'] ?? 'male',
+                        'address' => $item['address'] ?? null,
+                        'custody_details' => $item['custody_details'] ?? null,
+                        'health_card_number' => $item['health_card_number'] ?? null,
+                    ]);
                 } else {
-                    $camper = Camper::where('first_name', trim($item['first_name']))
-                        ->where('last_name', trim($item['last_name']))
-                        ->when($dob, fn ($query) => $query->whereDate('date_of_birth', $dob))
-                        ->first();
-
-                    if (! $camper) {
-                        $camper = Camper::create([
-                            'first_name' => trim($item['first_name']),
-                            'last_name' => trim($item['last_name']),
-                            'date_of_birth' => $dob,
-                            'gender' => $item['gender'] ?? 'male',
-                            'address' => $item['address'] ?? null,
-                            'custody_details' => $item['custody_details'] ?? null,
-                            'health_card_number' => $item['health_card_number'] ?? null,
-                        ]);
-                    }
-
-                    $registration = CamperRegistration::firstOrCreate(
-                        [
-                            'camper_id' => $camper->id,
-                            'camp_event_id' => $this->activeEvent->id,
-                        ],
-                        [
-                            'status' => 'pending',
-                        ]
-                    );
+                    $camper = Camper::create([
+                        'first_name' => trim($item['first_name']),
+                        'last_name' => trim($item['last_name']),
+                        'date_of_birth' => $dob,
+                        'gender' => $item['gender'] ?? 'male',
+                        'address' => $item['address'] ?? null,
+                        'custody_details' => $item['custody_details'] ?? null,
+                        'health_card_number' => $item['health_card_number'] ?? null,
+                    ]);
                 }
 
-                // 3. Attach guardians
-                foreach ($guardianModels as $gm) {
+                // Relacionar acampante con sus tutores
+                foreach ($guardianSyncData as $guardianId => $pivotData) {
                     $camper->guardians()->syncWithoutDetaching([
-                        $gm['model']->id => [
-                            'relationship_type' => $gm['relationship_type'],
-                            'is_primary_guardian' => $gm['is_primary_guardian'],
-                            'is_emergency_contact' => $gm['is_emergency_contact'],
+                        $guardianId => [
+                            'relationship_type' => $pivotData['relationship_type'],
+                            'is_primary_guardian' => $pivotData['is_primary_guardian'],
+                            'is_emergency_contact' => $pivotData['is_emergency_contact'],
                         ],
                     ]);
                 }
 
-                // 4. Medical Record
+                // B) Guardar/Actualizar CamperRegistration
+                $registration = CamperRegistration::firstOrCreate(
+                    [
+                        'camper_id' => $camper->id,
+                        'camp_event_id' => $this->activeEvent->id,
+                    ],
+                    [
+                        'status' => 'pending',
+                    ]
+                );
+
+                $registrationIds[] = $registration->id;
+
+                // C) Ficha Médica (Vinculada al Camper)
                 CamperMedical::updateOrCreate(
                     ['camper_id' => $camper->id],
                     [
@@ -303,35 +318,34 @@ class CamperRegistrationForm extends Component
                     ]
                 );
 
-                // 5. Consents
-                if (isset($registration) && $registration) {
-                    CamperConsent::updateOrCreate(
-                        ['camper_registration_id' => $registration->id],
-                        [
-                            'photo_permission' => (bool) ($item['photo_permission'] ?? false),
-                            'travel_permission' => (bool) ($item['travel_permission'] ?? false),
-                            'contact_permission' => (bool) ($item['contact_permission'] ?? false),
-                            'medical_permission' => (bool) ($item['medical_permission'] ?? false),
-                            'signed_at' => now(),
-                        ]
-                    );
-
-                    $tokens[] = [
-                        'name' => $item['first_name'].' '.$item['last_name'],
-                        'token' => $registration->token,
-                    ];
-                }
+                // D) Consentimientos (Vinculados a CamperRegistration)
+                CamperConsent::updateOrCreate(
+                    ['camper_registration_id' => $registration->id],
+                    [
+                        'photo_permission' => (bool) ($item['photo_permission'] ?? false),
+                        'travel_permission' => (bool) ($item['travel_permission'] ?? false),
+                        'contact_permission' => (bool) ($item['contact_permission'] ?? false),
+                        'medical_permission' => (bool) ($item['medical_permission'] ?? false),
+                        'signed_at' => now(),
+                    ]
+                );
             }
+
+            // Sincronizar las inscripciones con la sesión (vía pivote camper_registration_session)
+            $session->camperRegistrations()->sync($registrationIds);
         });
 
-        $this->registered_tokens = $tokens;
-        $this->submitted = true;
+        session()->flash('success_completed', true); 
+        session()->flash('success_event_name', $this->activeEvent->name ?? 'Evento de Campamento');
+        session()->flash('success_is_editing', $this->isEditing);
+
+        return $this->redirectRoute('registration.success');
     }
 
     public function render()
     {
         return view('livewire.public.camper-registration-form', [
             'activeEvent' => $this->activeEvent,
-        ])->layout('layouts.public', ['title' => $this->isEditing ? 'Update Registration' : 'Inscripción de Acampantes']);
+        ])->layout('layouts.public', ['title' => $this->isEditing ? 'Actualizar Inscripción' : 'Inscripción de Acampantes']);
     }
 }

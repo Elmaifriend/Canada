@@ -2,35 +2,7 @@
 @use('App\Enums\Gender')
 
 <div class="w-full space-y-6">
-    @if ($submitted)
-        <!-- Success Confirmation -->
-        <div class="bg-white shadow-md rounded-2xl p-6 sm:p-10 border border-emerald-100 text-center">
-            <div class="inline-flex items-center justify-center w-16 h-16 bg-emerald-100 text-[#135860] rounded-full mb-4">
-                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
-                </svg>
-            </div>
-            <h2 class="text-2xl sm:text-3xl font-heading font-bold text-slate-900 mb-2">
-                {{ $isEditing ? 'Registration Updated Successfully!' : 'Registration Submitted Successfully!' }}
-            </h2>
-            <p class="text-slate-600 mb-6">
-                Registered campers for session <strong>{{ $activeEvent->name ?? '' }}</strong>:
-            </p>
-
-            <div class="max-w-md mx-auto space-y-3 mb-8">
-                @foreach ($registered_tokens as $reg)
-                    <div class="flex flex-col sm:flex-row items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-200 gap-2">
-                        <span class="font-semibold text-slate-900">{{ $reg['name'] }}</span>
-                        <span class="font-mono text-xs bg-[#135860]/10 text-[#135860] px-3.5 py-1.5 rounded-xl font-bold">Access Token: {{ $reg['token'] }}</span>
-                    </div>
-                @endforeach
-            </div>
-
-            <button type="button" onclick="window.location.reload()" class="bg-[#135860] hover:bg-[#0d434a] text-white font-heading font-bold px-8 py-3.5 rounded-2xl transition-all shadow-md active:scale-[0.98]">
-                Register Another Family
-            </button>
-        </div>
-    @elseif (!$activeEvent)
+    @if (!$activeEvent)
         <!-- Inactive Event Banner -->
         <div class="bg-amber-50 border-l-4 border-amber-500 p-6 rounded-r-2xl">
             <div class="flex items-start">
