@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Public;
 
+use App\Mail\RegistrationConfirmationMail;
 use App\Models\CampEvent;
 use App\Models\Camper;
 use App\Models\CamperConsent;
@@ -9,13 +10,15 @@ use App\Models\CamperMedical;
 use App\Models\CamperRegistration;
 use App\Models\Guardian;
 use App\Models\RegistrationSession;
+use App\Services\CamperMatchingService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 
 class CamperRegistrationForm extends Component
 {
-    // Remueve el atributo #[Url] para evitar sincronización con la Query String (?token=)
     public ?string $token = null;
 
     public bool $isEditing = false;
@@ -25,14 +28,11 @@ class CamperRegistrationForm extends Component
     public array $guardians = [];
     public array $campers = [];
 
-    // Recibe $token directamente del parámetro de la ruta URI: /camper-register/edit/{token}
     public function mount(?string $token = null): void
     {
-        // Únicamente tomamos el parámetro que viene en la definición de la ruta
         $targetToken = $token;
 
         if (! empty($targetToken)) {
-            // Cargar la sesión con sus relaciones pivote
             $session = RegistrationSession::with([
                 'campEvent',
                 'guardians',
@@ -56,17 +56,13 @@ class CamperRegistrationForm extends Component
             session()->flash('warning', 'Enlace de acceso no válido o expirado. Puedes completar un nuevo registro.');
         }
 
-        // Configuración por defecto para nuevo registro
         $this->activeEvent = CampEvent::where('is_active', true)->latest()->first();
         $this->addGuardian();
         $this->addCamper();
     }
 
-    // ─── Carga y Reconstrucción de Datos ───────────────────────────────────────
-
     private function loadRegistrationSessionData(RegistrationSession $session): void
     {
-        // 1. Reconstruir Guardias desde la pivote guardian_registration_session
         foreach ($session->guardians as $index => $g) {
             $pivot = $g->pivot;
             $this->guardians[] = [
@@ -87,7 +83,6 @@ class CamperRegistrationForm extends Component
             $this->addGuardian();
         }
 
-        // 2. Reconstruir Acampantes desde camperRegistrations de la Sesión
         foreach ($session->camperRegistrations as $registration) {
             $camper = $registration->camper;
             if (! $camper) continue;
@@ -129,8 +124,6 @@ class CamperRegistrationForm extends Component
         }
     }
 
-    // ─── Gestión de Guardias Dinámicos ────────────────────────────────────────
-
     public function addGuardian(): void
     {
         $this->guardians[] = [
@@ -159,8 +152,6 @@ class CamperRegistrationForm extends Component
             }
         }
     }
-
-    // ─── Gestión de Acampantes Dinámicos ──────────────────────────────────────
 
     public function addCamper(): void
     {
@@ -193,18 +184,17 @@ class CamperRegistrationForm extends Component
         }
     }
 
-    // ─── Guardado / Actualización ──────────────────────────────────────────────
-
-    public function submit()
+    public function submit(CamperMatchingService $matchingService)
     {
         if (! $this->activeEvent) {
             session()->flash('error', 'No hay ningún evento activo configurado.');
             return;
         }
 
-        $sessionToken = null;
+        $session = null;
+        $savedGuardians = [];
 
-        DB::transaction(function () use (&$sessionToken) {
+        DB::transaction(function () use ($matchingService, &$session, &$savedGuardians) {
 
             // 1. Crear o recuperar la Sesión Contenedora
             if ($this->isEditing && $this->registration_session_id) {
@@ -216,30 +206,35 @@ class CamperRegistrationForm extends Component
                 ]);
             }
 
-            $sessionToken = $session->token;
-
-            // 2. Procesar Tutores / Guardias
+            // 2. Procesar Tutores / Guardians
             $guardianSyncData = [];
+            $guardianIds = [];
+
             foreach ($this->guardians as $gData) {
+                $email = ! empty($gData['email']) ? trim($gData['email']) : null;
+
                 $guardianData = [
-                    'first_name' => trim($gData['first_name']),
-                    'last_name' => trim($gData['last_name']),
-                    'phone' => trim($gData['phone']),
+                    'first_name' => trim($gData['first_name'] ?? ''),
+                    'last_name' => trim($gData['last_name'] ?? ''),
+                    'phone' => trim($gData['phone'] ?? ''),
                     'address' => $gData['address'] ?? null,
                     'has_custody' => (bool) ($gData['has_custody'] ?? false),
                 ];
 
                 if (! empty($gData['id'])) {
                     $guardian = Guardian::findOrFail($gData['id']);
-                    $guardian->update(array_merge($guardianData, ['email' => $gData['email'] ?? null]));
-                } elseif (! empty($gData['email'])) {
+                    $guardian->update(array_merge($guardianData, ['email' => $email]));
+                } elseif ($email) {
                     $guardian = Guardian::updateOrCreate(
-                        ['email' => trim($gData['email'])],
+                        ['email' => $email],
                         $guardianData
                     );
                 } else {
                     $guardian = Guardian::create(array_merge($guardianData, ['email' => null]));
                 }
+
+                $guardianIds[] = $guardian->id;
+                $savedGuardians[] = $guardian;
 
                 $guardianSyncData[$guardian->id] = [
                     'relationship_type' => $gData['relationship_type'] ?? 'father',
@@ -259,31 +254,32 @@ class CamperRegistrationForm extends Component
                     ? \Carbon\Carbon::parse($item['date_of_birth'])->toDateString()
                     : null;
 
-                // A) Guardar/Actualizar Camper
+                $camperData = [
+                    'first_name' => trim($item['first_name'] ?? ''),
+                    'last_name' => trim($item['last_name'] ?? ''),
+                    'date_of_birth' => $dob,
+                    'gender' => $item['gender'] ?? 'male',
+                    'address' => $item['address'] ?? null,
+                    'custody_details' => $item['custody_details'] ?? null,
+                    'health_card_number' => $item['health_card_number'] ?? null,
+                ];
+
+                $camper = null;
+
                 if (! empty($item['camper_id'])) {
-                    $camper = Camper::findOrFail($item['camper_id']);
-                    $camper->update([
-                        'first_name' => trim($item['first_name']),
-                        'last_name' => trim($item['last_name']),
-                        'date_of_birth' => $dob,
-                        'gender' => $item['gender'] ?? 'male',
-                        'address' => $item['address'] ?? null,
-                        'custody_details' => $item['custody_details'] ?? null,
-                        'health_card_number' => $item['health_card_number'] ?? null,
-                    ]);
-                } else {
-                    $camper = Camper::create([
-                        'first_name' => trim($item['first_name']),
-                        'last_name' => trim($item['last_name']),
-                        'date_of_birth' => $dob,
-                        'gender' => $item['gender'] ?? 'male',
-                        'address' => $item['address'] ?? null,
-                        'custody_details' => $item['custody_details'] ?? null,
-                        'health_card_number' => $item['health_card_number'] ?? null,
-                    ]);
+                    $camper = Camper::find($item['camper_id']);
                 }
 
-                // Relacionar acampante con sus tutores
+                if (! $camper) {
+                    $camper = $matchingService->findBestMatch($camperData, $guardianIds);
+                }
+
+                if ($camper) {
+                    $camper->update($camperData);
+                } else {
+                    $camper = Camper::create($camperData);
+                }
+
                 foreach ($guardianSyncData as $guardianId => $pivotData) {
                     $camper->guardians()->syncWithoutDetaching([
                         $guardianId => [
@@ -294,7 +290,6 @@ class CamperRegistrationForm extends Component
                     ]);
                 }
 
-                // B) Guardar/Actualizar CamperRegistration
                 $registration = CamperRegistration::firstOrCreate(
                     [
                         'camper_id' => $camper->id,
@@ -307,7 +302,6 @@ class CamperRegistrationForm extends Component
 
                 $registrationIds[] = $registration->id;
 
-                // C) Ficha Médica (Vinculada al Camper)
                 CamperMedical::updateOrCreate(
                     ['camper_id' => $camper->id],
                     [
@@ -318,7 +312,6 @@ class CamperRegistrationForm extends Component
                     ]
                 );
 
-                // D) Consentimientos (Vinculados a CamperRegistration)
                 CamperConsent::updateOrCreate(
                     ['camper_registration_id' => $registration->id],
                     [
@@ -331,9 +324,23 @@ class CamperRegistrationForm extends Component
                 );
             }
 
-            // Sincronizar las inscripciones con la sesión (vía pivote camper_registration_session)
             $session->camperRegistrations()->sync($registrationIds);
         });
+
+        // 4. Enviar correo a los guardianes (filtrando nulos y repetidos)
+        $emailsToNotify = collect($savedGuardians)
+            ->pluck('email')
+            ->filter() // Elimina los correos nulos o vacíos
+            ->unique() // Evita enviar 2 veces si múltiples tutores usan el mismo correo
+            ->values();
+
+        foreach ($emailsToNotify as $email) {
+            try {
+                Mail::to($email)->sendNow(new RegistrationConfirmationMail($session));
+            } catch (\Throwable $e) {
+                Log::error("Error enviando correo de confirmación a {$email}: " . $e->getMessage());
+            }
+        }
 
         session()->flash('success_completed', true); 
         session()->flash('success_event_name', $this->activeEvent->name ?? 'Evento de Campamento');
