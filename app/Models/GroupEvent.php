@@ -2,7 +2,7 @@
 
 namespace App\Models;
 
-use App\Enums\GroupEventStatus;
+use App\Enums\GuestGroupStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -21,13 +21,14 @@ class GroupEvent extends Model
         'end_date',
         'expected_attendees',
         'status',
+        'rejected_reason',
         'operational_notes',
     ];
 
     protected function casts(): array
     {
         return [
-            'status' => GroupEventStatus::class,
+            'status' => GuestGroupStatus::class,
             'start_date' => 'date',
             'end_date' => 'date',
         ];

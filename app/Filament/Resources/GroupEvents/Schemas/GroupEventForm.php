@@ -2,7 +2,7 @@
 
 namespace App\Filament\Resources\GroupEvents\Schemas;
 
-use App\Enums\GroupEventStatus;
+use App\Enums\GuestGroupStatus;
 use App\Filament\Forms\Components\QrCodeCard;
 use App\Models\GroupEvent;
 use Filament\Actions\Action;
@@ -70,6 +70,21 @@ class GroupEventForm
                                     ->rows(3)
                                     ->autosize()
                                     ->columnSpanFull(),
+
+                                Textarea::make('rejected_reason')
+                                    ->label('Rejection Reason')
+                                    ->placeholder('Specify the reason for rejecting this application...')
+                                    ->rows(3)
+                                    ->autosize()
+                                    ->columnSpanFull()
+                                    ->visible(fn ($get): bool => 
+                                        $get('status') === GuestGroupStatus::REJECTED || 
+                                        $get('status') === GuestGroupStatus::REJECTED->value
+                                    )
+                                    ->required(fn ($get): bool => 
+                                        $get('status') === GuestGroupStatus::REJECTED || 
+                                        $get('status') === GuestGroupStatus::REJECTED->value
+                                    ),
                             ])
                             ->columns(2)
                             ->columnSpan(1),
@@ -80,10 +95,11 @@ class GroupEventForm
                             ->schema([
                                 Select::make('status')
                                     ->label('Inquiry Request Status')
-                                    ->options(GroupEventStatus::class)
-                                    ->default(GroupEventStatus::InquiryReceived)
+                                    ->options(GuestGroupStatus::class)
+                                    ->default(GuestGroupStatus::INQUIRY_RECEIVED)
                                     ->native(false)
                                     ->required()
+                                    ->live()
                                     ->columnSpanFull(),
 
                                 DatePicker::make('start_date')

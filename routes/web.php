@@ -6,6 +6,11 @@ use App\Livewire\Public\CamperRegistrationForm;
 use App\Livewire\Public\GroupEventRegistrationForm;
 use Illuminate\Support\Facades\Route;
 use App\Livewire\RegistrationSuccess;
+use App\Livewire\RequestSubmitted;
+
+
+Route::get('/application-submitted/{token?}', RequestSubmitted::class)
+    ->name('group.application.submitted');
 
 
 

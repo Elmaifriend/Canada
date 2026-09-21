@@ -16,6 +16,7 @@ return new class extends Migration
             $table->date('end_date');
             $table->integer('expected_attendees');
             $table->string('status')->default('inquiry_received');
+            $table->text('rejected_reason')->nullable();
             $table->text('operational_notes')->nullable();
             $table->timestamps();
         });

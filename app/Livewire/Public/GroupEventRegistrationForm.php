@@ -4,7 +4,6 @@ namespace App\Livewire\Public;
 
 use App\Enums\DocumentFileType;
 use App\Enums\EventServiceCategory;
-use App\Enums\GroupEventStatus;
 use App\Models\Activity;
 use App\Models\GroupEvent;
 use App\Models\GuestGroup;
@@ -14,6 +13,8 @@ use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithFileUploads;
+use App\Mail\GroupApplicationSubmitted;
+use Illuminate\Support\Facades\Mail;
 
 class GroupEventRegistrationForm extends Component
 {
@@ -137,11 +138,14 @@ class GroupEventRegistrationForm extends Component
         $this->selected_activities = [];
     }
 
-    public function submit(): void
+    public function submit()
     {
         $this->validate();
 
-        DB::transaction(function () {
+        $groupToken = null;
+        $group = null; // Declare $group outside transaction scope
+
+        DB::transaction(function () use (&$groupToken, &$group) {
             // 1. Find or create GuestGroup
             $group = GuestGroup::firstOrCreate(
                 ['email' => trim($this->email)],
@@ -162,6 +166,9 @@ class GroupEventRegistrationForm extends Component
                 'address' => $this->address,
             ]);
 
+            // Save group token for session/redirect
+            $groupToken = $group->token;
+
             // 2. Create or Update GroupEvent
             if ($this->isEditing && $this->group_event_id) {
                 $event = GroupEvent::find($this->group_event_id);
@@ -181,7 +188,6 @@ class GroupEventRegistrationForm extends Component
                     'end_date' => $this->end_date,
                     'expected_attendees' => $this->expected_attendees,
                     'operational_notes' => $this->special_activities,
-                    'status' => GroupEventStatus::InquiryReceived,
                 ]);
             }
 
@@ -259,6 +265,15 @@ class GroupEventRegistrationForm extends Component
             $this->event_token = $event->token;
             $this->submitted = true;
         });
+
+        // Safe call: $group is now available outside the closure
+        if ($group) {
+            Mail::to($group->email)->send(new GroupApplicationSubmitted($group));
+        }
+
+        session()->flash('guest_group_token', $groupToken);
+
+        return $this->redirectRoute('group.application.submitted', ['token' => $groupToken]);
     }
 
     public function render()
